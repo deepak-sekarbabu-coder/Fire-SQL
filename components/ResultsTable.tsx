@@ -55,22 +55,32 @@ const ResultsTable: React.FC<Props> = ({ result, loading, onUpdateCell, onInsert
 
     setEditingLoc({ id, col });
     
-    // Determine Initial Type
+    // Determine Initial Type & Value
     let type: 'string' | 'number' | 'boolean' | 'json' | 'null' = 'string';
-    if (currentVal === null) type = 'null';
-    else if (typeof currentVal === 'number') type = 'number';
-    else if (typeof currentVal === 'boolean') type = 'boolean';
-    else if (typeof currentVal === 'object') type = 'json';
+    let initialEditValue = '';
+
+    if (currentVal === null) {
+      type = 'null';
+    } else if (currentVal === undefined) {
+      // Treat undefined as null for editing purposes
+      type = 'null'; 
+    } else if (typeof currentVal === 'number') {
+      type = 'number';
+      initialEditValue = String(currentVal);
+    } else if (typeof currentVal === 'boolean') {
+      type = 'boolean';
+      initialEditValue = String(currentVal);
+    } else if (typeof currentVal === 'object') {
+      type = 'json';
+      initialEditValue = JSON.stringify(currentVal, null, 2);
+    } else {
+      // Default to String (catches strings and edge cases)
+      type = 'string';
+      initialEditValue = String(currentVal);
+    }
     
     setEditType(type);
-
-    if (typeof currentVal === 'object' && currentVal !== null) {
-      setEditValue(JSON.stringify(currentVal, null, 2));
-    } else if (currentVal === undefined || currentVal === null) {
-      setEditValue('');
-    } else {
-      setEditValue(String(currentVal));
-    }
+    setEditValue(initialEditValue);
   };
 
   const handleSave = () => {
