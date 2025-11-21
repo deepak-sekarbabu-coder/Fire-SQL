@@ -1,0 +1,5 @@
+{
+  "name": "FireSQL Editor",
+  "description": "A SQL-like interface for querying and editing Cloud Firestore collections directly from the browser.",
+  "requestFramePermissions": []
+}
