@@ -4,7 +4,7 @@ import ConfigModal from './components/ConfigModal';
 import Sidebar from './components/Sidebar';
 import ResultsTable from './components/ResultsTable';
 import { runQuery } from './services/queryEngine';
-import { initializeFirebase, isFirebaseInitialized, executeUpdate, executeInsert, executeSelect } from './services/firebaseService';
+import { initializeFirebase, isFirebaseInitialized, executeUpdate, executeInsert } from './services/firebaseService';
 import { AppState, FirebaseConfig, QueryHistoryItem, QueryResult } from './types';
 
 const App: React.FC = () => {

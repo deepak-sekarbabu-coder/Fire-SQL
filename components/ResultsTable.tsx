@@ -378,7 +378,7 @@ service cloud.firestore {
     );
   };
 
-  const renderCell = (rowId: string, col: string, val: any) => {
+  const renderCell = (_rowId: string, _col: string, val: any) => {
     // Helper for Type Badge
     const getTypeBadge = () => {
       if (val === null) return <span className="ml-1.5 text-[9px] text-slate-400 bg-slate-100 px-1 rounded border border-slate-200 select-none shrink-0" title="Null">∅</span>;

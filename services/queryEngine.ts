@@ -11,7 +11,7 @@ import { QueryResult } from '../types';
  * DELETE FROM collection WHERE id = 'docId'
  */
 
-const cleanString = (str: string) => str.trim();
+
 const removeQuotes = (str: string) => str.replace(/^['"]|['"]$/g, '');
 
 export const runQuery = async (queryString: string, startAfterDoc?: any): Promise<QueryResult> => {
