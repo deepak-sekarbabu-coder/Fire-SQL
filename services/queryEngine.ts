@@ -14,20 +14,12 @@ import { QueryResult } from '../types';
 const cleanString = (str: string) => str.trim();
 const removeQuotes = (str: string) => str.replace(/^['"]|['"]$/g, '');
 
-export const runQuery = async (queryString: string): Promise<QueryResult> => {
+export const runQuery = async (queryString: string, startAfterDoc?: any): Promise<QueryResult> => {
   const q = queryString.trim();
 
   try {
     // --- SELECT ---
     // Regex: SELECT * FROM <collection> [WHERE <field> <op> <value>] [LIMIT <number>]
-    // This regex is getting complex. Let's break it down slightly looser or be very specific.
-    // Group 1: Collection Name
-    // Group 2: WHERE clause (optional)
-    // Group 3: WHERE field
-    // Group 4: WHERE op
-    // Group 5: WHERE val
-    // Group 6: LIMIT clause (optional)
-    // Group 7: LIMIT value
     const selectRegex = /^SELECT\s+\*\s+FROM\s+([a-zA-Z0-9_/-]+)(?:\s+WHERE\s+([a-zA-Z0-9_.]+)\s*(=|!=|>|<|>=|<=)\s*(.+?))?(?:\s+LIMIT\s+(\d+))?$/i;
     const selectMatch = q.match(selectRegex);
 
@@ -41,14 +33,15 @@ export const runQuery = async (queryString: string): Promise<QueryResult> => {
 
       // Limit Clause
       const limitValStr = selectMatch[5];
-      const limitVal = limitValStr ? parseInt(limitValStr, 10) : undefined;
+      // Default to 5 if not specified, per requirements
+      const limitVal = limitValStr ? parseInt(limitValStr, 10) : 5;
 
       let whereClause = undefined;
       if (whereField && whereOp && whereVal) {
         whereClause = { field: whereField, op: whereOp, value: whereVal.trim() };
       }
 
-      const { rows, lastDoc } = await executeSelect(collection, whereClause, limitVal);
+      const { rows, lastDoc } = await executeSelect(collection, whereClause, limitVal, startAfterDoc);
 
       const columns = rows.length > 0 ? ['id', ...Object.keys(rows[0]).filter(k => k !== 'id')] : ['id'];
 

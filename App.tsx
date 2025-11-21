@@ -16,7 +16,9 @@ const App: React.FC = () => {
   const [config, setConfig] = useState<FirebaseConfig | null>(null);
   
   // Pagination State
-  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [page, setPage] = useState(1);
+  // Stack of cursors. Index 0 is for Page 1 (null), Index 1 is for Page 2 (startAfter doc of Page 1), etc.
+  const [cursors, setCursors] = useState<any[]>([null]); 
   
   // Pre-populated with collections from the user's screenshot
   const [collections, setCollections] = useState<string[]>([
@@ -98,25 +100,30 @@ const App: React.FC = () => {
     localStorage.setItem('fireSQL_collections', JSON.stringify(newCols));
   };
 
+  // Core execution wrapper
+  const fetchData = async (q: string, cursor: any) => {
+      setLoading(true);
+      const res = await runQuery(q, cursor);
+      setResult(res);
+      setLoading(false);
+      return res;
+  };
+
   const handleRunQuery = async (overrideQuery?: string) => {
     const qToRun = overrideQuery || query;
     if (!qToRun.trim()) return;
     
-    setLoading(true);
-    // Reset pagination on new query run
-    setLastDoc(null);
+    // Reset pagination for fresh queries
+    setPage(1);
+    setCursors([null]);
     
-    const res = await runQuery(qToRun);
-    
-    setResult(res);
-    setLastDoc(res.lastDoc); // Store cursor if available
+    const res = await fetchData(qToRun, null);
 
     setHistory(prev => [...prev, { 
       query: qToRun, 
       timestamp: Date.now(), 
       status: res.type === 'error' ? 'error' : 'success' 
     }]);
-    setLoading(false);
   };
   
   // Specific handler for Sidebar clicks to auto-execute
@@ -126,34 +133,36 @@ const App: React.FC = () => {
       handleRunQuery(autoQuery);
   };
 
-  const handleLoadMore = async () => {
-    if (!result || !result.collectionName || !lastDoc) return;
-    
-    setLoading(true);
-    try {
-        // Fetch next batch using the service directly to bypass parsing complex SQL with cursors
-        // We assume a page size of 5 based on the initial requirement
-        const { rows, lastDoc: newLastDoc } = await executeSelect(result.collectionName, undefined, 5, lastDoc);
-        
-        if (rows.length > 0) {
-            setResult(prev => {
-                if (!prev) return null;
-                return {
-                    ...prev,
-                    rows: [...prev.rows, ...rows],
-                    message: `Fetched ${prev.rows.length + rows.length} documents from '${result.collectionName}'`
-                };
-            });
-            setLastDoc(newLastDoc);
-        } else {
-            // No more docs
-            setLastDoc(null); 
-        }
-    } catch (e: any) {
-        alert("Error loading more: " + e.message);
-    } finally {
-        setLoading(false);
-    }
+  const handleNextPage = async () => {
+      if (!result || !result.lastDoc) return;
+
+      const nextCursor = result.lastDoc;
+      
+      // If we haven't visited this page before, store the cursor
+      // cursors[0] = null (Page 1 start)
+      // cursors[1] = Page 1 last doc (Page 2 start)
+      const nextPageIdx = page;
+      const newCursors = [...cursors];
+      if (!newCursors[nextPageIdx]) {
+          newCursors[nextPageIdx] = nextCursor;
+          setCursors(newCursors);
+      }
+
+      setPage(p => p + 1);
+      await fetchData(query, nextCursor);
+  };
+
+  const handlePrevPage = async () => {
+      if (page <= 1) return;
+      
+      const prevPage = page - 1;
+      // The cursor for Page N is at index N-1
+      // Page 1: cursors[0] (null)
+      // Page 2: cursors[1]
+      const prevCursor = cursors[prevPage - 1];
+      
+      setPage(prevPage);
+      await fetchData(query, prevCursor);
   };
 
   const handleCellUpdate = async (docId: string, field: string, value: any) => {
@@ -253,6 +262,8 @@ const App: React.FC = () => {
             setAppState(AppState.LOGIN);
             setHistory([]);
             setResult(null);
+            setPage(1);
+            setCursors([null]);
         }}
         onConfig={() => setAppState(AppState.CONFIG)}
       />
@@ -296,7 +307,9 @@ const App: React.FC = () => {
             loading={loading} 
             onUpdateCell={handleCellUpdate}
             onInsertRow={handleRowInsert}
-            onLoadMore={lastDoc ? handleLoadMore : undefined}
+            onNextPage={handleNextPage}
+            onPrevPage={handlePrevPage}
+            page={page}
         />
       </main>
     </div>

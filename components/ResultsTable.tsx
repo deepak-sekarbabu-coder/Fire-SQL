@@ -6,7 +6,9 @@ interface Props {
   loading: boolean;
   onUpdateCell?: (docId: string, field: string, value: any) => void;
   onInsertRow?: (data: any) => void;
-  onLoadMore?: () => void;
+  onNextPage?: () => void;
+  onPrevPage?: () => void;
+  page?: number;
 }
 
 interface InsertField {
@@ -15,7 +17,7 @@ interface InsertField {
   type: 'string' | 'number' | 'boolean' | 'json' | 'null';
 }
 
-const ResultsTable: React.FC<Props> = ({ result, loading, onUpdateCell, onInsertRow, onLoadMore }) => {
+const ResultsTable: React.FC<Props> = ({ result, loading, onUpdateCell, onInsertRow, onNextPage, onPrevPage, page = 1 }) => {
   const [editingLoc, setEditingLoc] = useState<{ id: string; col: string } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
   const [editType, setEditType] = useState<'string' | 'number' | 'boolean' | 'json' | 'null'>('string');
@@ -48,6 +50,7 @@ const ResultsTable: React.FC<Props> = ({ result, loading, onUpdateCell, onInsert
   }, [editingLoc, editValue, editType]); // Dependencies required for handleSave closure
 
   const handleStartEdit = (id: string, col: string, currentVal: any) => {
+    // Explicitly prevent editing ID column
     if (col === 'id' || !onUpdateCell || result?.type !== 'read') return;
 
     setEditingLoc({ id, col });
@@ -430,10 +433,14 @@ service cloud.firestore {
               <tr key={row.id || idx} className="hover:bg-slate-50 transition-colors group">
                 {result.columns.map((col) => {
                   const isEditing = editingLoc?.id === row.id && editingLoc?.col === col;
+                  const isId = col === 'id';
                   return (
                     <td 
                       key={`${idx}-${col}`} 
-                      className={`p-3 border-r border-slate-100 last:border-r-0 whitespace-nowrap max-w-xs relative ${col !== 'id' && result.type === 'read' ? 'cursor-pointer hover:bg-blue-50' : ''}`}
+                      className={`p-3 border-r border-slate-100 last:border-r-0 whitespace-nowrap max-w-xs relative 
+                        ${isId ? 'bg-slate-50 text-slate-500 cursor-default' : ''}
+                        ${!isId && result.type === 'read' ? 'cursor-pointer hover:bg-blue-50' : ''}
+                      `}
                       onClick={() => !isEditing && handleStartEdit(row.id, col, row[col])}
                     >
                       {isEditing ? renderEditWidget() : renderCell(row.id, col, row[col])}
@@ -445,35 +452,53 @@ service cloud.firestore {
             {result.rows.length === 0 && (
               <tr>
                 <td colSpan={result.columns.length} className="p-8 text-center text-slate-400 italic">
-                  No records found
+                  {page > 1 ? "End of results" : "No records found"}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
-      <div className="bg-slate-50 border-t border-slate-200 p-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-           {onLoadMore && (
+      
+      {/* Pagination Footer */}
+      {result.type === 'read' && (
+        <div className="bg-slate-50 border-t border-slate-200 p-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+             {onPrevPage && (
                <button 
-                  onClick={onLoadMore} 
-                  disabled={loading}
-                  className="text-xs font-medium px-3 py-1 bg-white border border-slate-300 rounded shadow-sm hover:bg-slate-50 text-slate-700 disabled:opacity-50 flex items-center gap-1"
+                  onClick={onPrevPage}
+                  disabled={page <= 1 || loading}
+                  className="text-xs font-medium px-3 py-1 bg-white border border-slate-300 rounded shadow-sm hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
                >
-                   {loading ? (
-                     <span className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></span>
-                   ) : (
-                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
-                   )}
-                   Load More
+                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+                   Prev
                </button>
-           )}
+             )}
+             <span className="text-xs text-slate-500 font-medium bg-slate-200/50 px-2 py-1 rounded">
+               Page {page}
+             </span>
+             {onNextPage && (
+               <button 
+                  onClick={onNextPage}
+                  disabled={loading || result.rows.length === 0}
+                  className="text-xs font-medium px-3 py-1 bg-white border border-slate-300 rounded shadow-sm hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+               >
+                   Next
+                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
+               </button>
+             )}
+             
+             {loading && <span className="text-xs text-slate-400 ml-2 animate-pulse">Fetching...</span>}
+          </div>
+          
+          <div className="flex items-center gap-2">
+             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100 shadow-sm transition-colors hover:bg-blue-100">
+               <svg className="w-3 h-3 mr-1.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+               Showing: {result.rows.length}
+             </span>
+          </div>
         </div>
-        <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100 shadow-sm transition-colors hover:bg-blue-100">
-           <svg className="w-3 h-3 mr-1.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-           Total Rows: {result.rows.length}
-        </span>
-      </div>
+      )}
 
       {/* Insert Row Modal */}
       {showInsertModal && (
