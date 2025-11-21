@@ -11,7 +11,10 @@ import {
   query,
   where,
   getDoc,
-  WhereFilterOp
+  limit,
+  startAfter,
+  WhereFilterOp,
+  QueryDocumentSnapshot
 } from 'firebase/firestore';
 import { FirebaseConfig } from '../types';
 
@@ -39,11 +42,16 @@ export const isFirebaseInitialized = () => !!db;
 
 // --- Core Operations ---
 
-export const executeSelect = async (colName: string, whereClause?: { field: string, op: string, value: any }) => {
+export const executeSelect = async (
+  colName: string, 
+  whereClause?: { field: string, op: string, value: any },
+  limitVal?: number,
+  startAfterDoc?: QueryDocumentSnapshot
+) => {
   if (!db) throw new Error("Database not connected");
 
   const colRef = collection(db, colName);
-  let q = query(colRef);
+  let constraints: any[] = [];
 
   if (whereClause) {
     // Map SQL operators to Firestore operators
@@ -69,12 +77,24 @@ export const executeSelect = async (colName: string, whereClause?: { field: stri
     if (val.startsWith("'") && val.endsWith("'")) val = val.slice(1, -1);
     if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
 
-    q = query(colRef, where(whereClause.field, fsOp, val));
+    constraints.push(where(whereClause.field, fsOp, val));
   }
 
+  if (startAfterDoc) {
+    constraints.push(startAfter(startAfterDoc));
+  }
+
+  if (limitVal) {
+    constraints.push(limit(limitVal));
+  }
+
+  const q = query(colRef, ...constraints);
   const snapshot = await getDocs(q);
+  
   const rows = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
-  return rows;
+  const lastDoc = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : undefined;
+
+  return { rows, lastDoc };
 };
 
 export const executeInsert = async (colName: string, data: any) => {

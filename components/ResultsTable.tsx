@@ -5,13 +5,25 @@ interface Props {
   result: QueryResult | null;
   loading: boolean;
   onUpdateCell?: (docId: string, field: string, value: any) => void;
+  onInsertRow?: (data: any) => void;
+  onLoadMore?: () => void;
 }
 
-const ResultsTable: React.FC<Props> = ({ result, loading, onUpdateCell }) => {
+interface InsertField {
+  key: string;
+  value: string;
+  type: 'string' | 'number' | 'boolean' | 'json' | 'null';
+}
+
+const ResultsTable: React.FC<Props> = ({ result, loading, onUpdateCell, onInsertRow, onLoadMore }) => {
   const [editingLoc, setEditingLoc] = useState<{ id: string; col: string } | null>(null);
   const [editValue, setEditValue] = useState<string>('');
   const [editType, setEditType] = useState<'string' | 'number' | 'boolean' | 'json' | 'null'>('string');
   
+  // Insert Modal State
+  const [showInsertModal, setShowInsertModal] = useState(false);
+  const [insertFields, setInsertFields] = useState<InsertField[]>([]);
+
   const inputRef = useRef<HTMLTextAreaElement | HTMLInputElement>(null);
   const editContainerRef = useRef<HTMLDivElement>(null);
 
@@ -141,7 +153,67 @@ const ResultsTable: React.FC<Props> = ({ result, loading, onUpdateCell }) => {
     document.body.removeChild(link);
   };
 
-  if (loading) {
+  // --- Insert Modal Logic ---
+  const handleOpenInsert = () => {
+    if (!result) return;
+    
+    // Pre-fill fields based on existing columns, excluding ID
+    const initialFields = result.columns
+      .filter(c => c !== 'id')
+      .map(c => ({ key: c, value: '', type: 'string' } as InsertField));
+      
+    // If no columns (e.g. empty collection view), start with one empty field
+    if (initialFields.length === 0) {
+        initialFields.push({ key: '', value: '', type: 'string' });
+    }
+    
+    setInsertFields(initialFields);
+    setShowInsertModal(true);
+  };
+
+  const handleInsertSubmit = () => {
+    if (!onInsertRow) return;
+    
+    const data: Record<string, any> = {};
+    
+    for (const field of insertFields) {
+        if (!field.key.trim()) continue; // Skip empty keys
+        
+        try {
+            let val: any = field.value;
+            switch(field.type) {
+                case 'number': val = Number(field.value); break;
+                case 'boolean': val = field.value.toLowerCase() === 'true'; break;
+                case 'json': val = JSON.parse(field.value); break;
+                case 'null': val = null; break;
+                case 'string': default: val = String(field.value); break;
+            }
+            data[field.key] = val;
+        } catch (e) {
+            alert(`Error parsing field '${field.key}': Invalid ${field.type} format.`);
+            return;
+        }
+    }
+    
+    onInsertRow(data);
+    setShowInsertModal(false);
+  };
+
+  const updateInsertField = (idx: number, key: keyof InsertField, val: any) => {
+    const newFields = [...insertFields];
+    newFields[idx] = { ...newFields[idx], [key]: val };
+    setInsertFields(newFields);
+  };
+
+  const addInsertField = () => {
+    setInsertFields([...insertFields, { key: '', value: '', type: 'string' }]);
+  };
+
+  const removeInsertField = (idx: number) => {
+      setInsertFields(insertFields.filter((_, i) => i !== idx));
+  };
+
+  if (loading && !result) {
     return (
       <div className="flex-1 flex items-center justify-center text-slate-400 gap-2 animate-pulse">
         <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>
@@ -312,7 +384,7 @@ service cloud.firestore {
   };
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col">
+    <div className="flex-1 overflow-hidden flex flex-col relative">
       <div className={`px-4 py-2 border-b text-sm font-medium flex items-center gap-2 ${result.type === 'write' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
         {result.type === 'write' ? (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
@@ -322,8 +394,16 @@ service cloud.firestore {
         {result.message}
         
         {result.type === 'read' && (
-          <div className="ml-auto flex items-center gap-4">
+          <div className="ml-auto flex items-center gap-3">
              <span className="text-xs text-slate-500 font-normal hidden sm:inline">Click cells to edit</span>
+             
+             {onInsertRow && result.collectionName && (
+                <button onClick={handleOpenInsert} className="flex items-center gap-1 px-2 py-1 bg-blue-600 border border-blue-600 rounded hover:bg-blue-700 text-white text-xs font-medium transition-colors shadow-sm">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                    Add Row
+                </button>
+             )}
+
              {result.rows.length > 0 && (
                <button onClick={handleExportCSV} className="flex items-center gap-1 px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-50 text-slate-600 text-xs font-medium transition-colors shadow-sm">
                  <svg className="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
@@ -372,12 +452,90 @@ service cloud.firestore {
           </tbody>
         </table>
       </div>
-      <div className="bg-slate-50 border-t border-slate-200 p-3 flex items-center justify-end">
+      <div className="bg-slate-50 border-t border-slate-200 p-3 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+           {onLoadMore && (
+               <button 
+                  onClick={onLoadMore} 
+                  disabled={loading}
+                  className="text-xs font-medium px-3 py-1 bg-white border border-slate-300 rounded shadow-sm hover:bg-slate-50 text-slate-700 disabled:opacity-50 flex items-center gap-1"
+               >
+                   {loading ? (
+                     <span className="w-3 h-3 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></span>
+                   ) : (
+                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" /></svg>
+                   )}
+                   Load More
+               </button>
+           )}
+        </div>
         <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100 shadow-sm transition-colors hover:bg-blue-100">
            <svg className="w-3 h-3 mr-1.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
            Total Rows: {result.rows.length}
         </span>
       </div>
+
+      {/* Insert Row Modal */}
+      {showInsertModal && (
+        <div className="absolute inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90%] border border-slate-200">
+                <div className="p-4 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
+                    <h3 className="font-bold text-slate-800">Add Document to '{result.collectionName}'</h3>
+                    <button onClick={() => setShowInsertModal(false)} className="text-slate-400 hover:text-slate-600">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                <div className="p-4 overflow-y-auto space-y-3 flex-1">
+                    {insertFields.map((field, idx) => (
+                        <div key={idx} className="flex gap-2 items-start">
+                            <div className="flex-1">
+                                <input 
+                                    type="text" 
+                                    placeholder="Key" 
+                                    value={field.key}
+                                    onChange={(e) => updateInsertField(idx, 'key', e.target.value)}
+                                    className="w-full p-2 text-xs font-mono border border-slate-300 rounded mb-1 focus:border-blue-500 outline-none"
+                                />
+                                <div className="flex gap-1">
+                                    {['string', 'number', 'boolean', 'json', 'null'].map(t => (
+                                        <button 
+                                            key={t}
+                                            onClick={() => updateInsertField(idx, 'type', t)}
+                                            className={`px-1.5 py-0.5 text-[10px] uppercase font-bold rounded border ${field.type === t ? 'bg-blue-100 text-blue-700 border-blue-200' : 'bg-slate-50 text-slate-400 border-slate-100'}`}
+                                        >
+                                            {t === 'string' ? 'Aa' : t === 'boolean' ? 'T/F' : t === 'number' ? '#' : t === 'json' ? '{}' : '∅'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex-[2]">
+                                {field.type === 'null' ? (
+                                    <div className="w-full p-2 text-xs text-slate-400 italic bg-slate-50 border border-slate-200 rounded">null</div>
+                                ) : (
+                                    <textarea 
+                                        placeholder="Value" 
+                                        value={field.value}
+                                        onChange={(e) => updateInsertField(idx, 'value', e.target.value)}
+                                        className="w-full p-2 text-xs font-mono border border-slate-300 rounded h-[50px] focus:border-blue-500 outline-none resize-none"
+                                    />
+                                )}
+                            </div>
+                            <button onClick={() => removeInsertField(idx)} className="p-1 text-slate-400 hover:text-red-500 self-center">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                        </div>
+                    ))}
+                    <button onClick={addInsertField} className="w-full py-2 text-xs font-medium text-blue-600 border border-dashed border-blue-300 rounded hover:bg-blue-50 transition-colors">
+                        + Add Field
+                    </button>
+                </div>
+                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+                    <button onClick={() => setShowInsertModal(false)} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-200 rounded">Cancel</button>
+                    <button onClick={handleInsertSubmit} className="px-4 py-2 text-sm bg-blue-600 text-white font-medium rounded hover:bg-blue-700 shadow-sm">Save Document</button>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };

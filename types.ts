@@ -13,6 +13,7 @@ export interface QueryResult {
   message?: string;
   type: 'read' | 'write' | 'error';
   collectionName?: string;
+  lastDoc?: any; // Firestore QueryDocumentSnapshot
 }
 
 export interface QueryHistoryItem {

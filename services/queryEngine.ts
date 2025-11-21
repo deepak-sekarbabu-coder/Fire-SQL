@@ -5,7 +5,7 @@ import { QueryResult } from '../types';
  * A simple regex-based parser for a SQL dialect tailored for Firestore.
  * 
  * Supported Syntax:
- * SELECT * FROM collection [WHERE field = value]
+ * SELECT * FROM collection [WHERE field = value] [LIMIT n]
  * INSERT INTO collection JSON {"key": "value"}
  * UPDATE collection SET JSON {"key": "newVal"} WHERE id = 'docId'
  * DELETE FROM collection WHERE id = 'docId'
@@ -19,31 +19,46 @@ export const runQuery = async (queryString: string): Promise<QueryResult> => {
 
   try {
     // --- SELECT ---
-    // Regex: SELECT * FROM <collection> [WHERE <field> <op> <value>]
-    const selectRegex = /^SELECT\s+\*\s+FROM\s+([a-zA-Z0-9_/-]+)(?:\s+WHERE\s+([a-zA-Z0-9_.]+)\s*(=|!=|>|<|>=|<=)\s*(.+))?$/i;
+    // Regex: SELECT * FROM <collection> [WHERE <field> <op> <value>] [LIMIT <number>]
+    // This regex is getting complex. Let's break it down slightly looser or be very specific.
+    // Group 1: Collection Name
+    // Group 2: WHERE clause (optional)
+    // Group 3: WHERE field
+    // Group 4: WHERE op
+    // Group 5: WHERE val
+    // Group 6: LIMIT clause (optional)
+    // Group 7: LIMIT value
+    const selectRegex = /^SELECT\s+\*\s+FROM\s+([a-zA-Z0-9_/-]+)(?:\s+WHERE\s+([a-zA-Z0-9_.]+)\s*(=|!=|>|<|>=|<=)\s*(.+?))?(?:\s+LIMIT\s+(\d+))?$/i;
     const selectMatch = q.match(selectRegex);
 
     if (selectMatch) {
       const collection = selectMatch[1];
+      
+      // Where Clause
       const whereField = selectMatch[2];
       const whereOp = selectMatch[3];
-      const whereVal = selectMatch[4];
+      const whereVal = selectMatch[4]; // Non-greedy match before optional limit
+
+      // Limit Clause
+      const limitValStr = selectMatch[5];
+      const limitVal = limitValStr ? parseInt(limitValStr, 10) : undefined;
 
       let whereClause = undefined;
       if (whereField && whereOp && whereVal) {
-        whereClause = { field: whereField, op: whereOp, value: whereVal };
+        whereClause = { field: whereField, op: whereOp, value: whereVal.trim() };
       }
 
-      const data = await executeSelect(collection, whereClause);
+      const { rows, lastDoc } = await executeSelect(collection, whereClause, limitVal);
 
-      const columns = data.length > 0 ? ['id', ...Object.keys(data[0]).filter(k => k !== 'id')] : ['id'];
+      const columns = rows.length > 0 ? ['id', ...Object.keys(rows[0]).filter(k => k !== 'id')] : ['id'];
 
       return {
         type: 'read',
         columns,
-        rows: data,
-        message: `Fetched ${data.length} documents from '${collection}'`,
-        collectionName: collection
+        rows,
+        message: `Fetched ${rows.length} documents from '${collection}'`,
+        collectionName: collection,
+        lastDoc // Return for pagination
       };
     }
 

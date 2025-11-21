@@ -7,6 +7,7 @@ interface Props {
   onAddCollection: (name: string) => void;
   onRemoveCollection: (name: string) => void;
   onSelectQuery: (q: string) => void;
+  onCollectionClick?: (name: string) => void;
   onLogout: () => void;
   onConfig: () => void;
 }
@@ -17,6 +18,7 @@ const Sidebar: React.FC<Props> = ({
   onAddCollection,
   onRemoveCollection,
   onSelectQuery,
+  onCollectionClick,
   onLogout,
   onConfig
 }) => {
@@ -87,7 +89,7 @@ const Sidebar: React.FC<Props> = ({
             {collections.map((col) => (
               <div key={col} className="group flex items-center gap-1">
                 <button
-                  onClick={() => onSelectQuery(`SELECT * FROM ${col}`)}
+                  onClick={() => onCollectionClick ? onCollectionClick(col) : onSelectQuery(`SELECT * FROM ${col} LIMIT 5`)}
                   className="flex-1 text-left text-xs font-medium bg-transparent hover:bg-slate-800 text-slate-300 hover:text-white px-2 py-1.5 rounded transition-colors flex items-center gap-2"
                 >
                   <svg className="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
@@ -129,7 +131,7 @@ const Sidebar: React.FC<Props> = ({
           
           <div className="space-y-2">
             {[
-              `SELECT * FROM ${displayCol}`,
+              `SELECT * FROM ${displayCol} LIMIT 5`,
               `SELECT * FROM ${displayCol} WHERE field = 'value'`,
               `INSERT INTO ${displayCol} JSON {"name": "New Item"}`,
               `UPDATE ${displayCol} SET JSON {"updated": true} WHERE id = "doc_id"`,

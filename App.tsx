@@ -4,16 +4,19 @@ import ConfigModal from './components/ConfigModal';
 import Sidebar from './components/Sidebar';
 import ResultsTable from './components/ResultsTable';
 import { runQuery } from './services/queryEngine';
-import { initializeFirebase, isFirebaseInitialized, executeUpdate } from './services/firebaseService';
+import { initializeFirebase, isFirebaseInitialized, executeUpdate, executeInsert, executeSelect } from './services/firebaseService';
 import { AppState, FirebaseConfig, QueryHistoryItem, QueryResult } from './types';
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.LOGIN);
-  const [query, setQuery] = useState<string>('SELECT * FROM users');
+  const [query, setQuery] = useState<string>('SELECT * FROM users LIMIT 5');
   const [result, setResult] = useState<QueryResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState<QueryHistoryItem[]>([]);
   const [config, setConfig] = useState<FirebaseConfig | null>(null);
+  
+  // Pagination State
+  const [lastDoc, setLastDoc] = useState<any>(null);
   
   // Pre-populated with collections from the user's screenshot
   const [collections, setCollections] = useState<string[]>([
@@ -95,20 +98,62 @@ const App: React.FC = () => {
     localStorage.setItem('fireSQL_collections', JSON.stringify(newCols));
   };
 
-  const handleRunQuery = async () => {
-    if (!query.trim()) return;
+  const handleRunQuery = async (overrideQuery?: string) => {
+    const qToRun = overrideQuery || query;
+    if (!qToRun.trim()) return;
+    
     setLoading(true);
-    setResult(null);
-
-    const res = await runQuery(query);
+    // Reset pagination on new query run
+    setLastDoc(null);
+    
+    const res = await runQuery(qToRun);
     
     setResult(res);
+    setLastDoc(res.lastDoc); // Store cursor if available
+
     setHistory(prev => [...prev, { 
-      query: query, 
+      query: qToRun, 
       timestamp: Date.now(), 
       status: res.type === 'error' ? 'error' : 'success' 
     }]);
     setLoading(false);
+  };
+  
+  // Specific handler for Sidebar clicks to auto-execute
+  const handleCollectionSelect = (colName: string) => {
+      const autoQuery = `SELECT * FROM ${colName} LIMIT 5`;
+      setQuery(autoQuery);
+      handleRunQuery(autoQuery);
+  };
+
+  const handleLoadMore = async () => {
+    if (!result || !result.collectionName || !lastDoc) return;
+    
+    setLoading(true);
+    try {
+        // Fetch next batch using the service directly to bypass parsing complex SQL with cursors
+        // We assume a page size of 5 based on the initial requirement
+        const { rows, lastDoc: newLastDoc } = await executeSelect(result.collectionName, undefined, 5, lastDoc);
+        
+        if (rows.length > 0) {
+            setResult(prev => {
+                if (!prev) return null;
+                return {
+                    ...prev,
+                    rows: [...prev.rows, ...rows],
+                    message: `Fetched ${prev.rows.length + rows.length} documents from '${result.collectionName}'`
+                };
+            });
+            setLastDoc(newLastDoc);
+        } else {
+            // No more docs
+            setLastDoc(null); 
+        }
+    } catch (e: any) {
+        alert("Error loading more: " + e.message);
+    } finally {
+        setLoading(false);
+    }
   };
 
   const handleCellUpdate = async (docId: string, field: string, value: any) => {
@@ -148,6 +193,34 @@ const App: React.FC = () => {
     }
   };
 
+  const handleRowInsert = async (data: any) => {
+    if (!result || !result.collectionName) return;
+    const col = result.collectionName;
+    
+    try {
+       const newDoc = await executeInsert(col, data);
+       
+       // Optimistic update
+       setResult(prev => {
+           if (!prev) return null;
+           return {
+               ...prev,
+               rows: [newDoc, ...prev.rows],
+               message: `Document added locally. (ID: ${newDoc.id})`
+           }
+       });
+       
+       // History
+       setHistory(prev => [...prev, {
+           query: `INSERT INTO ${col} JSON ${JSON.stringify(data)}`,
+           timestamp: Date.now(),
+           status: 'success'
+       }]);
+    } catch(e: any) {
+        alert("Failed to insert: " + e.message);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       handleRunQuery();
@@ -174,7 +247,8 @@ const App: React.FC = () => {
         collections={collections}
         onAddCollection={handleAddCollection}
         onRemoveCollection={handleRemoveCollection}
-        onSelectQuery={setQuery} 
+        onSelectQuery={setQuery} // For cheatsheet/history
+        onCollectionClick={handleCollectionSelect} // For direct clicks
         onLogout={() => {
             setAppState(AppState.LOGIN);
             setHistory([]);
@@ -198,11 +272,11 @@ const App: React.FC = () => {
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
               className="w-full h-full p-4 font-mono text-sm text-slate-800 outline-none resize-none"
-              placeholder="SELECT * FROM collection..."
+              placeholder="SELECT * FROM collection LIMIT 5"
               spellCheck={false}
             />
             <button
-                onClick={handleRunQuery}
+                onClick={() => handleRunQuery()}
                 disabled={loading}
                 className="absolute bottom-4 right-4 px-6 py-2 bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold rounded-full shadow-lg transition-all hover:scale-105 disabled:opacity-50 disabled:scale-100 flex items-center gap-2"
             >
@@ -221,6 +295,8 @@ const App: React.FC = () => {
             result={result} 
             loading={loading} 
             onUpdateCell={handleCellUpdate}
+            onInsertRow={handleRowInsert}
+            onLoadMore={lastDoc ? handleLoadMore : undefined}
         />
       </main>
     </div>
